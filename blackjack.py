@@ -4,7 +4,11 @@ import art
 print(art.logo)
 
 
-def bids(balance, bid_amount, result=None, split_choice=None):
+def bids(
+    balance,
+    bid_amount,
+    result=None,
+):
     if result == "draw":
         balance += bid_amount
         print(f"You bet has been pushed back.\nCurrent Balance: {balance}")
@@ -56,12 +60,13 @@ def dealer(available, bid, choice):
 
 
 def new_card(
-    user_cards,
     cards,
+    user_cards,
     computer_cards,
     user_total,
     computer_total,
 ):
+    result = None
     while user_total <= 21:
         another_card = input("Type 'y' to get another card, type 'n' to pass: ").lower()
         if another_card == "y":
@@ -120,6 +125,7 @@ def new_card(
 
         else:
             print("Please select a valid choice.")
+    return result
 
 
 def blackjack(
@@ -168,50 +174,15 @@ def blackjack(
     ):
         print("it's a draw.")
         result = "draw"
-
-    if (user_cards[0][1] == user_cards[1][1]) and len(user_cards) == 2:
-        split = input("Would you like to split? Type 'yes' or 'no': ").lower()
-        if split == "yes":
-            user_hand_1 = user_cards[0]
-            new_card = random.choice(list(cards.keys()))
-            user_hand_1.append((new_card, cards[new_card]))
-            user_cards.append((new_card, cards[new_card]))
-            user_hand_2 = user_cards[1]
-            new_card = random.choice(list(cards.keys()))
-            user_hand_2.append((new_card, cards[new_card]))
-            user_cards.append((new_card, cards[new_card]))
-            if bid_choice == "yes":
-                total_amount -= bid_value
-                print(
-                    f"You've decided to split, so an additional {bid_value} is dedcuted from you account.\nCurrent balance {total_amount}"
-                )
-                print(
-                    f"To summarize you now have two hands one {[card for card,_ in user_hand_1]} with bid of {bid_value}, and another {[card for card,_ in user_hand_2]} with bid of {bid_value}."
-                )
-                new_card(
-                    cards,
-                    user_hand_1,
-                    computer_cards,
-                    user_total,
-                    computer_total,
-                    "yes",
-                )
-                new_card(
-                    cards,
-                    user_hand_2,
-                    computer_cards,
-                    user_total,
-                    computer_total,
-                )
-            else:
-                print("You've decided to split.")
-                print(
-                    f"To summarize you now have two hands one {[card for card,_ in user_hand_1]} with bid of {bid_value}, and another {[card for card,_ in user_hand_2]} with bid of {bid_value}."
-                )
-        new_card(cards, user_cards, computer_cards, user_total, computer_total)
+    else:
+        result = new_card(cards, user_cards, computer_cards, user_total, computer_total)
 
     if bid_choice == "bid":
-        available = bids(total_amount, bid_value, result, split)
+        available = bids(
+            total_amount,
+            bid_value,
+            result,
+        )
         return available
     else:
         print("Thanks for playing!")
