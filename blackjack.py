@@ -3,407 +3,296 @@ import art
 
 print(art.logo)
 
+RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
+SUITS = ["♠", "♥", "♦", "♣"]
+VALUES = {
+    "A": 11,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+    "7": 7,
+    "8": 8,
+    "9": 9,
+    "10": 10,
+    "J": 10,
+    "Q": 10,
+    "K": 10,
+}
 
-def bids(
-    balance,
-    bid_amount,
-    result=None,
-):
-    if result == "draw":
-        balance += bid_amount
-        print(f"You bet has been pushed back.\nCurrent Balance: {balance}")
+MIN_BET = 10
+MAX_BET = 100
+
+
+def build_deck():
+    deck = [(rank, suit) for suit in SUITS for rank in RANKS]
+    random.shuffle(deck)
+    return deck
+
+
+def draw_card(deck):
+    if not deck:
+        deck.extend(build_deck())
+    return deck.pop()
+
+
+def card_str(card):
+    rank, suit = card
+    return f"{rank}{suit}"
+
+
+def hand_to_list(hand):
+    return [card_str(card) for card in hand]
+
+
+def card_sum(hand):
+    total = sum(VALUES[rank] for rank, _ in hand)
+    aces = sum(1 for rank, _ in hand if rank == "A")
+    while total > 21 and aces > 0:
+        total -= 10
+        aces -= 1
+    return total
+
+
+def is_blackjack(hand):
+    return len(hand) == 2 and card_sum(hand) == 21
+
+
+def can_split(hand):
+    return len(hand) == 2 and VALUES[hand[0][0]] == VALUES[hand[1][0]]
+
+
+def ask_choice(prompt, valid):
+    while True:
+        answer = input(prompt).strip().lower()
+        if answer in valid:
+            return answer
+        print(f"Please enter one of: {', '.join(valid)}")
+
+
+def ask_bid(balance):
+    while True:
+        raw = input(
+            f"How much ₹ would you like to bid? (Min {MIN_BET} and Max {MAX_BET}): "
+        ).strip()
+        try:
+            amount = int(raw)
+        except ValueError:
+            print("Please enter a whole number.")
+            continue
+        if amount < MIN_BET or amount > MAX_BET:
+            print(f"Please enter a value between {MIN_BET} and {MAX_BET}.")
+            continue
+        if amount > balance:
+            print("You don't have enough balance for that bid.")
+            continue
+        return amount
+
+
+def show_dealer(dealer_hand, reveal=False):
+    if reveal:
+        print(f"Dealer: {hand_to_list(dealer_hand)}, Score: {card_sum(dealer_hand)}")
+    else:
+        print(f"Dealer: [{card_str(dealer_hand[0])}, ??]")
+
+
+def show_hand(label, hand):
+    print(f"{label}: {hand_to_list(hand)}, Score: {card_sum(hand)}")
+
+
+def play_out_hand(deck, hand, is_split_ace=False):
+    if is_split_ace:
+        hand.append(draw_card(deck))
+        show_hand("Hand", hand)
+        return
+    while card_sum(hand) < 21:
+        action = ask_choice(
+            f"Hand {hand_to_list(hand)} (Score: {card_sum(hand)}) — 'h' to hit, 's' to stand: ",
+            ["h", "s"],
+        )
+        if action == "h":
+            hand.append(draw_card(deck))
+            print(f"You drew {card_str(hand[-1])}.")
+            show_hand("Hand", hand)
+            if card_sum(hand) > 21:
+                print("Bust! This hand is over.")
+        else:
+            return
+
+
+def dealer_play(deck, dealer_hand):
+    while card_sum(dealer_hand) < 17:
+        dealer_hand.append(draw_card(deck))
+
+
+def settle_hand(hand, dealer_hand, bet, blackjack_eligible):
+    total = card_sum(hand)
+    dealer_total = card_sum(dealer_hand)
+
+    if total > 21:
+        return "computer", 0
+
+    dealer_bj = is_blackjack(dealer_hand)
+
+    if blackjack_eligible and is_blackjack(hand) and not dealer_bj:
+        return "user_blackjack", bet + int(bet * 1.5)
+    if blackjack_eligible and is_blackjack(hand) and dealer_bj:
+        return "draw", bet
+    if dealer_total > 21:
+        return "user", bet * 2
+    if total > dealer_total:
+        return "user", bet * 2
+    if total < dealer_total:
+        return "computer", 0
+    return "draw", bet
+
+
+def announce(result, bet, payout, prefix=""):
+    if result == "user_blackjack":
+        print(f"{prefix}Blackjack! You win ₹{payout - bet}.")
     elif result == "user":
-        balance += 2 * bid_amount
-        print(f"You won ₹{bid_amount}.\nCurrent Balance: {balance}")
-    elif result in ("computer", "computer_blackjack"):
-        print(f"You lost ₹{bid_amount}.\nCurrent Balance: {balance}")
-    elif result == "user_blackjack":
-        balance += 2.5 * bid_amount
-        print(f"You won ₹{1.5*bid_amount}.\nCurrent Balance: {balance}")
+        print(f"{prefix}You win ₹{payout - bet}.")
+    elif result == "draw":
+        print(f"{prefix}Push — your ₹{bet} bet is returned.")
+    else:
+        print(f"{prefix}You lose ₹{bet}.")
+
+
+def play_round(deck, balance, bid_amount, bidding):
+    player_hand = [draw_card(deck), draw_card(deck)]
+    dealer_hand = [draw_card(deck), draw_card(deck)]
+
+    show_dealer(dealer_hand)
+    show_hand("Your hand", player_hand)
+
+    if is_blackjack(player_hand) or is_blackjack(dealer_hand):
+        show_dealer(dealer_hand, reveal=True)
+        result, payout = settle_hand(player_hand, dealer_hand, bid_amount, True)
+        if bidding:
+            balance += payout
+        announce(result, bid_amount, payout)
+        return balance
+
+    hands = [player_hand]
+    bets = [bid_amount]
+
+    if can_split(player_hand) and (not bidding or balance >= bid_amount):
+        split_choice = ask_choice(
+            "Your first two cards match — split? (y/n): ", ["y", "n"]
+        )
+        if split_choice == "y":
+            if bidding:
+                balance -= bid_amount
+                print(
+                    f"You've decided to split, so an additional ₹{bid_amount} is deducted.\nCurrent balance ₹{balance}"
+                )
+            is_ace_split = player_hand[0][0] == "A"
+            hand_1 = [player_hand[0], draw_card(deck)]
+            hand_2 = [player_hand[1], draw_card(deck)]
+            hands = [hand_1, hand_2]
+            bets = [bid_amount, bid_amount]
+            print(
+                f"Split into two hands: {hand_to_list(hand_1)} and {hand_to_list(hand_2)}"
+            )
+            for hand in hands:
+                play_out_hand(deck, hand, is_split_ace=is_ace_split)
+        else:
+            play_out_hand(deck, player_hand)
+    else:
+        play_out_hand(deck, player_hand)
+
+    if any(card_sum(hand) <= 21 for hand in hands):
+        dealer_play(deck, dealer_hand)
+
+    show_dealer(dealer_hand, reveal=True)
+
+    for index, (hand, bet) in enumerate(zip(hands, bets), start=1):
+        prefix = f"Hand {index}: " if len(hands) > 1 else ""
+        show_hand(f"Hand {index}" if len(hands) > 1 else "Your final hand", hand)
+        result, payout = settle_hand(hand, dealer_hand, bet, len(hands) == 1)
+        if bidding:
+            balance += payout
+        announce(result, bet, payout, prefix=prefix)
+
     return balance
 
 
-def card_sum(cards):
-    return sum(value for _, value in cards)
-
-
-def dealer(available, bid, choice):
-    cards = {
-        "A": 11,
-        "2": 2,
-        "3": 3,
-        "4": 4,
-        "5": 5,
-        "6": 6,
-        "7": 7,
-        "8": 8,
-        "9": 9,
-        "10": 10,
-        "J": 10,
-        "Q": 10,
-        "K": 10,
-    }
-    user_cards = [
-        (card, cards[card]) for card in random.choices(list(cards.keys()), k=2)
-    ]
-    user_sum = card_sum(user_cards)
-    print(f"Your cards: {[card for card, _ in user_cards]}, Score: {user_sum}")
-    computer_cards = [
-        (card, cards[card]) for card in random.choices(list(cards.keys()), k=2)
-    ]
-    computer_sum = card_sum(computer_cards)
-    print(f"Computer's first card: {computer_cards[0][0]}")
-    available = blackjack(
-        user_cards, computer_cards, user_sum, computer_sum, available, bid, choice
+def game_start(deck, name, balance, returning, force_no_bid=False):
+    greeting = (
+        f"Hello {name}, welcome back to Blackjack."
+        if returning
+        else f"Hello {name}, welcome to Blackjack."
     )
-    return available
+    print(greeting)
 
-
-def compare(user_total, computer_total):
-    if computer_total > 21:
-        return "user"
-    elif user_total < computer_total:
-        return "computer"
-    elif user_total > computer_total:
-        return "user"
-    else:
-        return "draw"
-
-
-def split_new_card(
-    cards,
-    user_cards,
-    computer_cards,
-    user_total,
-    computer_total,
-    last_hand="no",
-    hand_1_total=None,
-):
-    while user_total <= 21:
-        another_card = input(
-            f"Type 'y' to get another card for the hand {[card for card,_ in user_cards]}, type 'n' to pass: "
-        ).lower()
-
-        if another_card == "y":
-            new_card = random.choice(list(cards.keys()))
-            user_cards.append((new_card, cards[new_card]))
-            user_total = card_sum(user_cards)
-            if user_total <= 21:
-                print(
-                    f"Your cards: {[card for card,_ in user_cards]}, Score: {user_total}"
-                )
-                print(f"Computer's first card: {computer_cards[0][0]}")
-            else:
-                if ("A", 11) in user_cards:
-                    idx = user_cards.index(("A", 11))
-                    user_cards[idx] = ("A", 1)
-                    user_total = card_sum(user_cards)
-                    print(
-                        f"Your cards: {[card for card,_ in user_cards]}, Score: {user_total}"
-                    )
-                    print(f"Computer's first card: {computer_cards[0][0]}")
-                    continue
-                else:
-                    print(
-                        f"Your final hand: {[card for card,_ in user_cards]}, Score: {user_total}"
-                    )
-                    print(
-                        f"Computer's final hand: {[card for card,_ in computer_cards]}, Score: {computer_total}"
-                    )
-                    print("Oops! Sorry, you went over 21. You lose 😭.")
-                    if last_hand == "no":
-                        return user_total
-                    else:
-                        result_hand_2 = "computer"
-                        result_hand_1 = compare(hand_1_total, computer_total)
-                        return result_hand_1, result_hand_2
-
-        elif another_card == "n":
-            if last_hand == "no":
-                return user_total
-            else:
-                while computer_total < 17:
-                    new_card = random.choice(list(cards.keys()))
-                    computer_cards.append((new_card, cards[new_card]))
-                    computer_total = card_sum(computer_cards)
-                print(
-                    f"Your final hand: {[card for card,_ in user_cards]}, Score: {user_total}"
-                )
-                print(
-                    f"Computer's final hand: {[card for card,_ in computer_cards]}, Score: {computer_total}"
-                )
-                result_hand_1 = compare(hand_1_total, computer_total)
-                result_hand_2 = compare(user_total, computer_total)
-                return result_hand_1, result_hand_2
-
-        else:
-            print("Please select a valid choice.")
-
-
-def new_cards(
-    cards,
-    user_cards,
-    computer_cards,
-    user_total,
-    computer_total,
-):
-    result = None
-    while user_total <= 21:
-        another_card = input("Type 'y' to get another card, type 'n' to pass: ").lower()
-        if another_card == "y":
-            new_card = random.choice(list(cards.keys()))
-            user_cards.append((new_card, cards[new_card]))
-            user_total = card_sum(user_cards)
-            if user_total <= 21:
-                print(
-                    f"Your cards: {[card for card,_ in user_cards]}, Score: {user_total}"
-                )
-                print(f"Computer's first card: {computer_cards[0][0]}")
-            else:
-                if ("A", 11) in user_cards:
-                    idx = user_cards.index(("A", 11))
-                    user_cards[idx] = ("A", 1)
-                    user_total = card_sum(user_cards)
-                    print(
-                        f"Your cards: {[card for card,_ in user_cards]}, Score: {user_total}"
-                    )
-                    print(f"Computer's first card: {computer_cards[0][0]}")
-                    continue
-                else:
-                    print(
-                        f"Your final hand: {[card for card,_ in user_cards]}, Score: {user_total}"
-                    )
-                    print(
-                        f"Computer's final hand: {[card for card,_ in computer_cards]}, Score: {computer_total}"
-                    )
-                    print("Oops! Sorry, you went over 21. You lose 😭.")
-                    result = "computer"
-
-        elif another_card == "n":
-            while computer_total < 17:
-                new_card = random.choice(list(cards.keys()))
-                computer_cards.append((new_card, cards[new_card]))
-                computer_total = card_sum(computer_cards)
-            print(
-                f"Your final hand: {[card for card,_ in user_cards]}, Score: {user_total}"
-            )
-            print(
-                f"Computer's final hand: {[card for card,_ in computer_cards]}, Score: {computer_total}"
-            )
-            if computer_total > 21:
-                print("Computer's hand is bust, goes over 21. You win.")
-                result = "user"
-            elif user_total < computer_total:
-                print("Computer Wins")
-                result = "computer"
-            elif user_total > computer_total:
-                print("You win.")
-                result = "user"
-            else:
-                print("It's a Draw.")
-                result = "draw"
-            break
-
-        else:
-            print("Please select a valid choice.")
-    return result
-
-
-def blackjack(
-    user_cards,
-    computer_cards,
-    user_total,
-    computer_total,
-    total_amount=0,
-    bid_value=0,
-    bid_choice=None,
-):
-    split = "no"
-    cards = {
-        "A": 11,
-        "2": 2,
-        "3": 3,
-        "4": 4,
-        "5": 5,
-        "6": 6,
-        "7": 7,
-        "8": 8,
-        "9": 9,
-        "10": 10,
-        "J": 10,
-        "Q": 10,
-        "K": 10,
-    }
-
-    if (user_total == 21 and len(user_cards) == 2) and (
-        computer_total == 21 and len(computer_cards) == 2
-    ):
-        print("it's a draw.")
-        result = "draw"
-
-    elif (user_total == 21 and len(user_cards) == 2) and computer_total != 21:
-        print("It's a Blackjack. You win.")
-        result = "user_blackjack"
-
-    elif (user_total == 21 and len(user_cards) != 2) and (
-        computer_total == 21 and len(computer_cards) == 2
-    ):
-        print("It's a Blackjack for Computer. You lose.")
-        result = "computer_blackjack"
-
-    elif (user_total == 21 and len(user_cards) != 2) and (
-        computer_total == 21 and len(computer_cards) != 2
-    ):
-        print("it's a draw.")
-        result = "draw"
-
-    elif (user_cards[0][1] == user_cards[1][1]) and len(user_cards) == 2:
-        split = input("Would you like to split? Type 'yes' or 'no': ").lower()
-        if split == "yes":
-            user_hand_1 = [user_cards[0]]
-            new_card = random.choice(list(cards.keys()))
-            user_hand_1.append((new_card, cards[new_card]))
-            user_total_hand_1 = card_sum(user_hand_1)
-            user_hand_2 = [user_cards[1]]
-            new_card = random.choice(list(cards.keys()))
-            user_hand_2.append((new_card, cards[new_card]))
-            user_total_hand_2 = card_sum(user_hand_2)
-            if bid_choice == "bid":
-                total_amount -= bid_value
-                print(
-                    f"You've decided to split, so an additional {bid_value} is dedcuted from you account.\nCurrent balance {total_amount}"
-                )
-                print(
-                    f"To summarize you now have two hands one {[card for card,_ in user_hand_1]} with bid of {bid_value}, and another {[card for card,_ in user_hand_2]} with bid of {bid_value}."
-                )
-                user_result = split_new_card(
-                    cards,
-                    user_hand_1,
-                    computer_cards,
-                    user_total_hand_1,
-                    computer_total,
-                    "no",
-                )
-                result_1, result_2 = split_new_card(
-                    cards,
-                    user_hand_2,
-                    computer_cards,
-                    user_total_hand_2,
-                    computer_total,
-                    "yes",
-                    user_result,
-                )
-            else:
-                print("You've decided to split.")
-                print(
-                    f"To summarize you now have two hands one {[card for card,_ in user_hand_1]} with bid of {bid_value}, and another {[card for card,_ in user_hand_2]} with bid of {bid_value}."
-                )
-
-    else:
-        result = new_cards(
-            cards, user_cards, computer_cards, user_total, computer_total
-        )
-
-    if bid_choice == "bid" and split == "yes":
-        available = bids(
-            total_amount,
-            bid_value,
-            result_1,
-        )
-        available = bids(
-            available,
-            bid_value,
-            result_2,
-        )
-        return available
-
-    if bid_choice == "bid":
-        available = bids(
-            total_amount,
-            bid_value,
-            result,
-        )
-        return available
-
-    else:
-        print("Thanks for playing!")
-
-
-def game_start(name, available_balance, user, force_user=None):
-    if force_user == "yes":
+    if force_no_bid:
         want_bid = "no bid"
     else:
-        want_bid = input(
-            "Type 'bid' to bid, or type 'no bid' to play friendly: "
-        ).lower()
-    if user == "no":
-        print(f"Hello {name}, welcome to Blackjack.")
-    elif user == "yes":
-        print(f"Hello {name}, welcome back to Blackjack.")
-    if (want_bid == "bid") and (available_balance >= 10):
-        print(f"Your current balance is {available_balance}")
-        bid_amount = int(
-            input("How much ₹ would you like to bid?(Min 10 and Max 100.) ")
+        want_bid = ask_choice(
+            "Type 'bid' to bid, or 'no bid' to play friendly: ", ["bid", "no bid"]
         )
-        if 10 <= bid_amount <= 100:
-            available_balance -= bid_amount
-            print(f"You've bid ₹{bid_amount}, current balance {available_balance}")
-            available_balance = dealer(available_balance, bid_amount, want_bid)
-            return available_balance
-        else:
-            print("You've entered an invalid bid amount.")
-            return available_balance
-    elif want_bid == "no bid":
-        dealer(0, 0, want_bid)
+
+    if want_bid == "bid":
+        print(f"Your current balance is ₹{balance}")
+        bid_amount = ask_bid(balance)
+        balance -= bid_amount
+        print(f"You've bid ₹{bid_amount}, current balance ₹{balance}")
+        balance = play_round(deck, balance, bid_amount, bidding=True)
     else:
-        print("Something is not right.")
-        return available_balance
+        play_round(deck, 0, 0, bidding=False)
+        print("Thanks for playing!")
+
+    return balance
 
 
-end_of_game = False
-same_user = "no"
-while not end_of_game:
-    if same_user == "no":
-        balance = 1000
-        want_to_play = input(
-            "Do you want to play a game of Blackjack? Type 'y' or 'n': "
-        ).lower()
-        if want_to_play == "y":
-            user_name = input("Please enter you name: ")
-            balance = game_start(user_name, balance, same_user)
-            same_user = input(
-                "Would you like to continue with the same user? Type 'yes' or 'no': "
-            ).lower()
-        elif want_to_play == "n":
-            end_of_game = True
-            print("Okay. Thank you!")
-        else:
-            print("Please enter a valid choice.")
+def main():
+    deck = build_deck()
+    end_of_game = False
+    same_user = "no"
+    balance = 1000
+    user_name = ""
 
-    elif same_user == "yes":
-        print(f"Hello {user_name}, please play again.")
-        if balance < 10:
-            force_no_bid = input(
-                "Would you like to continue with out any bid? Type 'yes' or 'no': "
-            ).lower()
-            if force_no_bid == "yes":
-                balance = game_start(user_name, 0, same_user, force_no_bid)
-            elif force_no_bid == "no":
-                print(f"Thank you {user_name} for playing blackjack.")
+    while not end_of_game:
+        if same_user == "no":
+            want_to_play = ask_choice(
+                "Do you want to play a game of Blackjack? Type 'y' or 'n': ", ["y", "n"]
+            )
+            if want_to_play == "n":
                 end_of_game = True
+                print("Okay. Thank you!")
                 continue
-            else:
-                print(
-                    "Sorry! You didn't enter the correct choice. So, you've been removed from the game."
+            user_name = input("Please enter your name: ").strip() or "Player"
+            balance = 1000
+            balance = game_start(deck, user_name, balance, returning=False)
+            same_user = ask_choice(
+                "Would you like to continue with the same user? Type 'yes' or 'no': ",
+                ["yes", "no"],
+            )
+
+        else:
+            if balance < MIN_BET:
+                force_no_bid = ask_choice(
+                    "Would you like to continue without any bid? Type 'yes' or 'no': ",
+                    ["yes", "no"],
                 )
-                end_of_game = True
-                continue
-        else:
-            balance = game_start(user_name, balance, same_user)
-        same_user = input(
-            "Would you like to continue with the same user? Type 'yes' or 'no': "
-        ).lower()
+                if force_no_bid == "no":
+                    print(f"Thank you {user_name} for playing blackjack.")
+                    end_of_game = True
+                    continue
+                balance = game_start(
+                    deck, user_name, 0, returning=True, force_no_bid=True
+                )
+            else:
+                balance = game_start(deck, user_name, balance, returning=True)
 
-    else:
-        print("Sorry! Please enter a valid choice.")
-        break
+            same_user = ask_choice(
+                "Would you like to continue with the same user? Type 'yes' or 'no': ",
+                ["yes", "no"],
+            )
+
+    print(f"\nThanks for playing, {user_name}! Final balance: ₹{balance}")
+
+
+if __name__ == "__main__":
+    main()
